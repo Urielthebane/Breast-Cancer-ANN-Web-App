@@ -21,7 +21,7 @@ from sklearn.datasets import load_breast_cancer
 from sklearn.preprocessing import StandardScaler
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", template_folder="templates")
 
 # Logging configuration (Render-compatible)
 logging.basicConfig(

@@ -72,4 +72,5 @@ python app.py
 
 If successful, you should see:
 Loading ANN model...
- * Running on http://127.0.0.1:5000/
+ * Running on
+http://127.0.0.1:5000/
