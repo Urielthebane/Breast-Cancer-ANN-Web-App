@@ -20,17 +20,34 @@ from tensorflow.keras.models import load_model
 from sklearn.datasets import load_breast_cancer
 from sklearn.preprocessing import StandardScaler
 
-# Initialize Flask app
-app = Flask(__name__, static_folder="static", template_folder="templates")
+# ---------------------------------------------------------
+# Base directory (CRITICAL for Render)
+# ---------------------------------------------------------
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# Logging configuration (Render-compatible)
+# ---------------------------------------------------------
+# Flask App Initialization (FIXED)
+# ---------------------------------------------------------
+app = Flask(
+    __name__,
+    static_folder=os.path.join(BASE_DIR, "static"),
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_url_path="/static"
+)
+
+# ---------------------------------------------------------
+# Logging configuration
+# ---------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = "model/model_cancer_predictor.h5"
+# ---------------------------------------------------------
+# Model Configuration
+# ---------------------------------------------------------
+MODEL_PATH = os.path.join(BASE_DIR, "model", "model_cancer_predictor.h5")
 THRESHOLD = 0.5
 
 # ---------------------------------------------------------
@@ -53,17 +70,12 @@ scaler.fit(X)
 # ---------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
-    """
-    Main application page.
-    Allows users to input tumor features and receive predictions.
-    """
     result = None
     probability = None
     prediction_class = None
 
     if request.method == "POST":
         try:
-            # Extract feature values in correct order
             input_features = [
                 float(request.form[feature])
                 for feature in FEATURE_NAMES
@@ -72,7 +84,6 @@ def index():
             input_array = np.array(input_features).reshape(1, -1)
             input_scaled = scaler.transform(input_array)
 
-            # Model prediction
             prob = float(model.predict(input_scaled, verbose=0)[0][0])
             probability = round(prob, 4)
 
@@ -103,9 +114,6 @@ def index():
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    """
-    Health check endpoint for monitoring and Render verification.
-    """
     return jsonify(
         status="ok",
         model_loaded=True
