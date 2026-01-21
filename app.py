@@ -11,67 +11,110 @@ Deployment Target: Render
 
 # ---------------------------------------------------------
 # Imports
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import numpy as np
-import pandas as pd
-from pathlib import Path
+import logging
+import os
+
 from tensorflow.keras.models import load_model
-from sklearn.preprocessing import StandardScaler
 from sklearn.datasets import load_breast_cancer
+from sklearn.preprocessing import StandardScaler
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# Load trained model using file-relative path
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "model" / "model_cancer_predictor.h5"
+# Logging configuration (Render-compatible)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+logger = logging.getLogger(__name__)
 
-# Ensure model exists
-if not MODEL_PATH.exists():
-    raise FileNotFoundError(f"Model file not found at {MODEL_PATH}")
+MODEL_PATH = "model/model_cancer_predictor.h5"
+THRESHOLD = 0.5
 
+# ---------------------------------------------------------
+# Load Model & Preprocessing Objects
+# ---------------------------------------------------------
+logger.info("Loading ANN model...")
 model = load_model(MODEL_PATH)
+logger.info("Model loaded successfully")
 
-# Load breast cancer feature names from sklearn
+# Load dataset to recreate scaler exactly as during training
 data = load_breast_cancer(as_frame=True)
-features = list(data.frame.columns[:-1])  # All columns except target
+X = data.data
+FEATURE_NAMES = list(X.columns)
 
-# Fit scaler using training data (using full dataset for reference scaling)
 scaler = StandardScaler()
-scaler.fit(data.frame[features])
+scaler.fit(X)
 
-# Home route
+# ---------------------------------------------------------
+# Routes
+# ---------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
-def home():
-    prediction = None
+def index():
+    """
+    Main application page.
+    Allows users to input tumor features and receive predictions.
+    """
+    result = None
+    probability = None
     prediction_class = None
-    prediction_prob = None
 
     if request.method == "POST":
         try:
-            # Get form values
-            form_data = {}
-            for feature in features:
-                form_data[feature] = float(request.form.get(feature, 0))
+            # Extract feature values in correct order
+            input_features = [
+                float(request.form[feature])
+                for feature in FEATURE_NAMES
+            ]
 
-            # Convert to DataFrame and scale
-            input_df = pd.DataFrame([form_data])
-            input_scaled = scaler.transform(input_df)
+            input_array = np.array(input_features).reshape(1, -1)
+            input_scaled = scaler.transform(input_array)
 
-            # Make prediction
-            prediction_prob = model.predict(input_scaled, verbose=0)[0][0]
-            prediction_class = "malignant" if prediction_prob < 0.5 else "benign"
-            prediction = f"🔬 Prediction: {prediction_class.upper()} ({prediction_prob*100:.2f}%)"
-            prediction_class = "benign" if prediction_prob >= 0.5 else "malignant"
+            # Model prediction
+            prob = float(model.predict(input_scaled, verbose=0)[0][0])
+            probability = round(prob, 4)
+
+            if prob >= THRESHOLD:
+                result = "Benign Tumor"
+                prediction_class = "benign"
+            else:
+                result = "Malignant Tumor"
+                prediction_class = "malignant"
+
+            logger.info(
+                f"Prediction made | Result: {result} | Probability: {probability}"
+            )
 
         except Exception as e:
-            prediction = f"Error: {str(e)}"
+            logger.error(f"Prediction error: {e}")
+            result = "Invalid input values. Please check your entries."
             prediction_class = "error"
 
-    return render_template("index.html", prediction=prediction, prediction_class=prediction_class, features=features)
+    return render_template(
+        "index.html",
+        features=FEATURE_NAMES,
+        prediction=result,
+        prediction_class=prediction_class,
+        probability=probability
+    )
 
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """
+    Health check endpoint for monitoring and Render verification.
+    """
+    return jsonify(
+        status="ok",
+        model_loaded=True
+    ), 200
+
+
+# ---------------------------------------------------------
+# Application Entry Point
+# ---------------------------------------------------------
 if __name__ == "__main__":
-    print("Starting Flask server...")
-    print("Open this link in your browser: http://127.0.0.1:5000")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=False)
